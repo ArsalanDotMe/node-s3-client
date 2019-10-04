@@ -385,7 +385,6 @@ describe('s3', function () {
       if (err) throw err
 
       var client = createClient()
-      var localDir = path.join(tempDir, 'dir-copy')
       var params = {
         localDir: localTmpDir,
         deleteRemoved: true,
