@@ -1,7 +1,7 @@
 {
   "name": "s3-client",
   "version": "4.4.2",
-  "description": "high level amazon s3 client. upload and download files and directories",
+  "description": "Amazon S3 client for upload/download files",
   "main": "lib/index.js",
   "scripts": {
     "test": "mocha",
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/matrus2/node-s3-client"
+    "url": "https://github.com/ArsalanDotMe/node-s3-client"
   },
   "keywords": [
     "amazon",
@@ -31,14 +31,14 @@
   "author": "Andrew Kelley",
   "license": "MIT",
   "engines": {
-    "node": ">=0.10.20"
+    "node": ">=8.0.0"
   },
   "devDependencies": {
     "mocha": "^5.2.0",
     "ncp": "^2.0.0"
   },
   "dependencies": {
-    "aws-sdk": "^2.328.0",
+    "aws-sdk": "^2.346.0",
     "fd-slicer": "^1.1.0",
     "findit2": "~2.2.3",
     "graceful-fs": "~4.1.11",
@@ -49,7 +49,7 @@
     "streamsink": "~1.2.0"
   },
   "bugs": {
-    "url": "https://github.com/andrewrk/node-s3-client/issues"
+    "url": "https://github.com/ArsalanDotMe/node-s3-client/issues"
   },
   "directories": {
     "test": "test"
