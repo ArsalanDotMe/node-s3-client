@@ -5,6 +5,8 @@
   "main": "lib/index.js",
   "scripts": {
     "test": "mocha",
+    "build": "tsc -p .",
+    "build:live": "tsc -w",
     "security": "nsp check --summary",
     "publish:patch": "npm version patch && npm publish",
     "publish:minor": "npm version minor && npm publish",
@@ -34,8 +36,10 @@
     "node": ">=8.0.0"
   },
   "devDependencies": {
+    "@types/node": "^12.7.11",
     "mocha": "^5.2.0",
-    "ncp": "^2.0.0"
+    "ncp": "^2.0.0",
+    "typescript": "^3.6.3"
   },
   "dependencies": {
     "aws-sdk": "^2.346.0",
