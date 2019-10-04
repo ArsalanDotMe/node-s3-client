@@ -17,10 +17,8 @@ var commonUploadSize1 = 10 * 1024 * 1024
 var commonUploadSize2 = 15 * 1024 * 1024
 var minimumUploadSize = 5 * 1024 * 1024
 
-module.exports = MultipartETag
-
 util.inherits(MultipartETag, Transform)
-function MultipartETag (options) {
+export default function MultipartETag (options) {
   options = options || {}
   Transform.call(this, options)
   var sizes = [

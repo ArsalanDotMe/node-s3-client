@@ -1,4 +1,4 @@
-var AWS = require('aws-sdk')
+import AWS from 'aws-sdk'
 var EventEmitter = require('events').EventEmitter
 var fs = require('graceful-fs')
 var url = require('url')
@@ -25,10 +25,13 @@ exports.createClient = function (options) {
   return new Client(options)
 }
 
+async function sleep(delay: number) {
+  return new Promise((resolve) => setTimeout(resolve, delay))
+}
+
 exports.getPublicUrl = getPublicUrl
 exports.getPublicUrlHttp = getPublicUrlHttp
 
-exports.Client = Client
 exports.MultipartETag = MultipartETag
 exports.AWS = AWS
 
@@ -37,79 +40,84 @@ exports.MAX_DELETE_COUNT = MAX_DELETE_COUNT
 exports.MAX_MULTIPART_COUNT = MAX_MULTIPART_COUNT
 exports.MIN_MULTIPART_SIZE = MIN_MULTIPART_SIZE
 
-function Client(options) {
-  options = options || {}
-  this.s3 = options.s3Client || new AWS.S3(options.s3Options)
-  this.s3Pend = new Pend()
-  this.s3Pend.max = options.maxAsyncS3 || 20
-  this.s3RetryCount = options.s3RetryCount || 3
-  this.s3RetryDelay = options.s3RetryDelay || 1000
-  this.multipartUploadThreshold = options.multipartUploadThreshold || (20 * 1024 * 1024)
-  this.multipartUploadSize = options.multipartUploadSize || (15 * 1024 * 1024)
-  this.multipartDownloadThreshold = options.multipartDownloadThreshold || (20 * 1024 * 1024)
-  this.multipartDownloadSize = options.multipartDownloadSize || (15 * 1024 * 1024)
-
-  if (this.multipartUploadThreshold < MIN_MULTIPART_SIZE) {
-    throw new Error('Minimum multipartUploadThreshold is 5MB.')
-  }
-  if (this.multipartUploadThreshold > MAX_PUTOBJECT_SIZE) {
-    throw new Error('Maximum multipartUploadThreshold is 5GB.')
-  }
-  if (this.multipartUploadSize < MIN_MULTIPART_SIZE) {
-    throw new Error('Minimum multipartUploadSize is 5MB.')
-  }
-  if (this.multipartUploadSize > MAX_PUTOBJECT_SIZE) {
-    throw new Error('Maximum multipartUploadSize is 5GB.')
-  }
+export type ClientConfiguration = {
+  s3Options?: AWS.S3.ClientConfiguration
+  s3Client?: AWS.S3
+  maxAsyncS3?: number
+  s3RetryCount?: number
+  s3RetryDelay?: number
+  multipartUploadThreshold?: number
+  multipartUploadSize?: number
+  multipartDownloadThreshold?: number
+  multipartDownloadSize?: number
 }
 
-Client.prototype.deleteObjects = function (s3Params) {
-  var self = this
-  var ee = new EventEmitter()
+export class Client {
+  s3: AWS.S3
+  s3Pend: any
+  s3RetryCount: number
+  s3RetryDelay: number
+  multipartUploadThreshold: number
+  multipartUploadSize: number
+  multipartDownloadThreshold: number
+  multipartDownloadSize: number
 
-  var params = {
-    Bucket: s3Params.Bucket,
-    Delete: extend({}, s3Params.Delete),
-    MFA: s3Params.MFA
-  }
-  var slices = chunkArray(params.Delete.Objects, MAX_DELETE_COUNT)
-  var pend = new Pend()
+  constructor(options: ClientConfiguration) {
+    options = options || {}
+    this.s3 = options.s3Client || new AWS.S3(options.s3Options)
+    this.s3Pend = new Pend()
+    this.s3Pend.max = options.maxAsyncS3 || 20
+    this.s3RetryCount = options.s3RetryCount || 3
+    this.s3RetryDelay = options.s3RetryDelay || 1000
+    this.multipartUploadThreshold = options.multipartUploadThreshold || (20 * 1024 * 1024)
+    this.multipartUploadSize = options.multipartUploadSize || (15 * 1024 * 1024)
+    this.multipartDownloadThreshold = options.multipartDownloadThreshold || (20 * 1024 * 1024)
+    this.multipartDownloadSize = options.multipartDownloadSize || (15 * 1024 * 1024)
 
-  ee.progressAmount = 0
-  ee.progressTotal = params.Delete.Objects.length
-
-  slices.forEach(uploadSlice)
-  pend.wait(function (err) {
-    if (err) {
-      ee.emit('error', err)
-      return
+    if (this.multipartUploadThreshold < MIN_MULTIPART_SIZE) {
+      throw new Error('Minimum multipartUploadThreshold is 5MB.')
     }
-    ee.emit('end')
-  })
-  return ee
+    if (this.multipartUploadThreshold > MAX_PUTOBJECT_SIZE) {
+      throw new Error('Maximum multipartUploadThreshold is 5GB.')
+    }
+    if (this.multipartUploadSize < MIN_MULTIPART_SIZE) {
+      throw new Error('Minimum multipartUploadSize is 5MB.')
+    }
+    if (this.multipartUploadSize > MAX_PUTOBJECT_SIZE) {
+      throw new Error('Maximum multipartUploadSize is 5GB.')
+    }
+  }
 
-  function uploadSlice(slice) {
-    pend.go(function (cb) {
-      doWithRetry(tryDeletingObjects, self.s3RetryCount, self.s3RetryDelay, function (err, data) {
-        if (err) {
-          cb(err)
-        } else {
-          ee.progressAmount += slice.length
-          ee.emit('progress')
-          ee.emit('data', data)
-          cb()
-        }
-      })
-    })
+  async deleteObjects(s3Params: AWS.S3.DeleteObjectsRequest) {
+    const self = this
+    const ee = new EventEmitter()
 
-    function tryDeletingObjects(cb) {
-      self.s3Pend.go(function (pendCb) {
+    const params: AWS.S3.DeleteObjectsRequest = {
+      Bucket: s3Params.Bucket,
+      Delete: extend({}, s3Params.Delete),
+      MFA: s3Params.MFA
+    }
+    const slices: AWS.S3.ObjectIdentifier[][] = chunkArray(params.Delete.Objects, MAX_DELETE_COUNT)
+
+    ee.progressAmount = 0
+    ee.progressTotal = params.Delete.Objects.length
+
+    Promise.all(slices.map(uploadSlice))
+      .then(() => ee.emit('end'))
+      .catch((err) => ee.emit('error', err))
+
+    return ee
+
+    async function uploadSlice(slice: AWS.S3.ObjectIdentifier[]) {
+      const data = await doWithRetry(tryDeletingObjects, self.s3RetryCount, self.s3RetryDelay)
+      ee.progressAmount += slice.length
+      ee.emit('progress')
+      ee.emit('data', data)
+
+      function tryDeletingObjects() {
         params.Delete.Objects = slice
-        self.s3.deleteObjects(params, function (err, data) {
-          pendCb()
-          cb(err, data)
-        })
-      })
+        return self.s3.deleteObjects(params).promise()
+      }
     }
   }
 }
@@ -1360,29 +1368,25 @@ function ensureSlash(dir) {
   return ensureChar(dir, '/')
 }
 
-function doWithRetry(fn, tryCount, delay, cb) {
-  var tryIndex = 0
-
-  tryOnce()
-
-  function tryOnce() {
-    fn(function (err, result) {
-      if (err) {
-        if (err.retryable === false) {
-          cb(err)
-        } else {
-          tryIndex += 1
-          if (tryIndex >= tryCount) {
-            cb(err)
-          } else {
-            setTimeout(tryOnce, delay)
-          }
-        }
-      } else {
-        cb(null, result)
+async function doWithRetry(fn: () => Promise<any>, tryCount: number, delay: number) {
+  let tryIndex = 0
+  let result: any = null
+  for (; tryIndex < tryCount; tryIndex++) {
+    try {
+      result = await fn()
+      break
+    } catch (err) {
+      if (err.retryable === false) {
+        throw err
       }
-    })
+      if (tryIndex === (tryCount - 1)) {
+        throw err
+      }
+      await sleep(delay)
+    }
   }
+
+  return result
 }
 
 function extend(target, source) {
