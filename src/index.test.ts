@@ -27,7 +27,7 @@ if (!process.env.S3_BUCKET || !process.env.S3_KEY || !process.env.S3_SECRET) {
   process.exit(1)
 }
 
-let s3Bucket = process.env.S3_BUCKET as string
+let s3Bucket = process.env.S3_BUCKET
 
 function createClient () {
   const s3aws = new AWS.S3({

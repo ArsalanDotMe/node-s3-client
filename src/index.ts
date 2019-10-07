@@ -154,14 +154,7 @@ class Client {
   }
 }
 
-function extend (target, source) {
-  for (let propName in source) {
-    target[propName] = source[propName]
-  }
-  return target
-}
-
-function chunkArray (array, maxLength) {
+function chunkArray (array: any[], maxLength: number) {
   let slices = [array]
   while (slices[slices.length - 1].length > maxLength) {
     slices.push(slices[slices.length - 1].splice(maxLength))
@@ -169,7 +162,7 @@ function chunkArray (array, maxLength) {
   return slices
 }
 
-function encodeSpecialCharacters (filename) {
+function encodeSpecialCharacters (filename: string) {
   // Note: these characters are valid in URIs, but S3 does not like them for
   // some reason.
   return encodeURI(filename).replace(/[!'()* ]/g, function (char) {

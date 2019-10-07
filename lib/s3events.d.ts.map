@@ -1,0 +1,1 @@
+{"version":3,"file":"s3events.d.ts","sourceRoot":"","sources":["../src/s3events.ts"],"names":[],"mappings":";AAAA,OAAO,EAAE,YAAY,EAAE,MAAM,QAAQ,CAAA;AAErC,MAAM,CAAC,OAAO,OAAO,cAAe,SAAQ,YAAY;IAC/C,cAAc,EAAE,MAAM,CAAI;IAC1B,aAAa,EAAE,MAAM,CAAI;IACzB,YAAY,EAAE,SAAS,GAAG,MAAM,CAAA;IAChC,SAAS,EAAE,SAAS,GAAG,MAAM,CAAA;;CAIrC"}
