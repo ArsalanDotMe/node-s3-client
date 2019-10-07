@@ -4,7 +4,7 @@
   "description": "Amazon S3 client for upload/download files",
   "main": "lib/index.js",
   "scripts": {
-    "test": "mocha",
+    "test": "jest --verbose false",
     "build": "tsc -p .",
     "build:live": "tsc -w",
     "security": "nsp check --summary",
@@ -36,9 +36,16 @@
     "node": ">=8.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^24.0.18",
+    "@types/mkdirp": "^0.5.2",
     "@types/node": "^12.7.11",
+    "@types/rimraf": "^2.0.2",
+    "jest": "^24.9.0",
     "mocha": "^5.2.0",
     "ncp": "^2.0.0",
+    "ts-jest": "^24.1.0",
+    "tslint": "^5.20.0",
+    "tslint-config-standard": "^8.0.1",
     "typescript": "^3.6.3"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import AWS from 'aws-sdk'
-import S3Events from './s3events'
 import URL from 'url'
+import { EventEmitter } from 'events'
 
 export const MAX_PUTOBJECT_SIZE = 5 * 1024 * 1024 * 1024
 export const MAX_DELETE_COUNT = 1000
@@ -11,8 +11,18 @@ export const createClient = function (options: ClientConfiguration) {
   return new Client(options)
 }
 
-async function sleep(delay: number) {
+async function sleep (delay: number) {
   return new Promise((resolve) => setTimeout(resolve, delay))
+}
+
+export type DeleteDirRequest = {
+  Bucket: string
+  Prefix: string
+  MFA?: string
+}
+
+export type ListObjectsRequest = {
+  s3Params: AWS.S3.ListObjectsV2Request
 }
 
 export type ClientConfiguration = {
@@ -37,7 +47,7 @@ export class Client {
   multipartDownloadThreshold: number
   multipartDownloadSize: number
 
-  constructor(options: ClientConfiguration) {
+  constructor (options: ClientConfiguration) {
     options = options || {}
     this.s3 = options.s3Client || new AWS.S3(options.s3Options)
     this.maxAsyncS3 = options.maxAsyncS3 || 20
@@ -62,9 +72,8 @@ export class Client {
     }
   }
 
-  async deleteObjects(s3Params: AWS.S3.DeleteObjectsRequest) {
+  async deleteObjects (s3Params: AWS.S3.DeleteObjectsRequest, ee?: EventEmitter) {
     const self = this
-    const ee = new S3Events()
 
     const params: AWS.S3.DeleteObjectsRequest = {
       Bucket: s3Params.Bucket,
@@ -73,66 +82,93 @@ export class Client {
     }
     const slices: AWS.S3.ObjectIdentifier[][] = chunkArray(params.Delete.Objects, MAX_DELETE_COUNT)
 
-    ee.progressAmount = 0
-    ee.progressTotal = params.Delete.Objects.length
+    await Promise.all(slices.map(uploadSlice))
 
-    Promise.all(slices.map(uploadSlice))
-      .then(() => ee.emit('end'))
-      .catch((err) => ee.emit('error', err))
-
-    return ee
-
-    async function uploadSlice(slice: AWS.S3.ObjectIdentifier[]) {
-      const data = await doWithRetry(tryDeletingObjects, self.s3RetryCount, self.s3RetryDelay)
-      ee.progressAmount += slice.length
-      ee.emit('progress')
-      ee.emit('data', data)
-
-      function tryDeletingObjects() {
-        params.Delete.Objects = slice
-        return self.s3.deleteObjects(params).promise()
-      }
-    }
-  }
-}
-
-async function doWithRetry(fn: () => Promise<any>, tryCount: number, delay: number) {
-  let tryIndex = 0
-  let result: any = null
-  for (; tryIndex < tryCount; tryIndex++) {
-    try {
-      result = await fn()
-      break
-    } catch (err) {
-      if (err.retryable === false) {
-        throw err
-      }
-      if (tryIndex === (tryCount - 1)) {
-        throw err
-      }
-      await sleep(delay)
+    async function uploadSlice (slice: AWS.S3.ObjectIdentifier[]) {
+      params.Delete.Objects = slice
+      const data = await self.s3.deleteObjects(params).promise()
+      ee && ee.emit('data', data)
     }
   }
 
-  return result
+  async deleteDir (s3Params: DeleteDirRequest) {
+    const bucket = s3Params.Bucket
+    const mfa = s3Params.MFA
+    let listObjectsParams = {
+      s3Params: {
+        Bucket: bucket,
+        Prefix: s3Params.Prefix
+      }
+    }
+    const ee = new EventEmitter()
+    const listObjectsPromise = this.listObjects(listObjectsParams, ee)
+    let deleteObjectPromises: Promise<any>[] = []
+    ee.on('data', (objects) => {
+      const deleteParams: AWS.S3.DeleteObjectsRequest = {
+        Bucket: s3Params.Bucket,
+        Delete: {
+          Objects: objects.map(keyOnly),
+          Quiet: true
+        },
+        MFA: s3Params.MFA
+      }
+      deleteObjectPromises.push(this.s3.deleteObjects(deleteParams).promise())
+    })
+    await listObjectsPromise
+    await Promise.all(deleteObjectPromises)
+  }
+
+  async listObjects (params: ListObjectsRequest, ee?: EventEmitter) {
+    let s3Details = { ...params.s3Params }
+
+    const MAX_KEYS = 1000
+    let s3ObjectsList: Array<AWS.S3.Object> = []
+    let isPending: boolean = true
+    let continuationToken: string | undefined = s3Details.ContinuationToken
+
+    while (isPending) {
+      try {
+        const listData = await this.s3.listObjectsV2({
+          ...s3Details,
+          ContinuationToken: continuationToken,
+          MaxKeys: s3Details.MaxKeys || MAX_KEYS
+        }).promise()
+        if (!listData.Contents) {
+          throw new Error('List Contents should always be defined')
+        }
+
+        isPending = !!listData.IsTruncated
+        continuationToken = listData.NextContinuationToken
+
+        const listObjects = listData.Contents
+        if (ee) { ee.emit('data', listObjects) }
+        s3ObjectsList = [...s3ObjectsList, ...listObjects]
+      } catch (err) {
+        ee && ee.emit('error', err)
+        throw err
+      }
+    }
+    ee && ee.emit('done', s3ObjectsList)
+    return s3ObjectsList
+  }
 }
 
-function extend(target, source) {
-  for (var propName in source) {
+function extend (target, source) {
+  for (let propName in source) {
     target[propName] = source[propName]
   }
   return target
 }
 
-function chunkArray(array, maxLength) {
-  var slices = [array]
+function chunkArray (array, maxLength) {
+  let slices = [array]
   while (slices[slices.length - 1].length > maxLength) {
     slices.push(slices[slices.length - 1].splice(maxLength))
   }
   return slices
 }
 
-function encodeSpecialCharacters(filename) {
+function encodeSpecialCharacters (filename) {
   // Note: these characters are valid in URIs, but S3 does not like them for
   // some reason.
   return encodeURI(filename).replace(/[!'()* ]/g, function (char) {
@@ -140,10 +176,10 @@ function encodeSpecialCharacters(filename) {
   })
 }
 
-export function getPublicUrl(bucket, key, bucketLocation, endpoint) {
-  var nonStandardBucketLocation = (bucketLocation && bucketLocation !== 'us-east-1')
-  var hostnamePrefix = nonStandardBucketLocation ? ('s3-' + bucketLocation) : 's3'
-  var parts = {
+export function getPublicUrl (bucket: string, key: string, bucketLocation?: string, endpoint?: string) {
+  let nonStandardBucketLocation = (bucketLocation && bucketLocation !== 'us-east-1')
+  let hostnamePrefix = nonStandardBucketLocation ? ('s3-' + bucketLocation) : 's3'
+  let parts = {
     protocol: 'https:',
     hostname: hostnamePrefix + '.' + (endpoint || 'amazonaws.com'),
     pathname: '/' + bucket + '/' + encodeSpecialCharacters(key)
@@ -151,11 +187,18 @@ export function getPublicUrl(bucket, key, bucketLocation, endpoint) {
   return URL.format(parts)
 }
 
-export function getPublicUrlHttp(bucket, key, endpoint) {
-  var parts = {
+export function getPublicUrlHttp (bucket: string, key: string, endpoint?: string) {
+  let parts = {
     protocol: 'http:',
     hostname: bucket + '.' + (endpoint || 's3.amazonaws.com'),
     pathname: '/' + encodeSpecialCharacters(key)
   }
   return URL.format(parts)
+}
+
+function keyOnly (item: AWS.S3.Object) {
+  return {
+    Key: item.Key as string,
+    VersionId: (item as any).VersionId
+  }
 }
