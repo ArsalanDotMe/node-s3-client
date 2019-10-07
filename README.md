@@ -144,5 +144,4 @@ Returns list of S3 Objects (`AWS.S3.Object[]`)
 
 `S3_KEY=<valid_s3_key> S3_SECRET=<valid_s3_secret> S3_BUCKET=<valid_s3_bucket> npm test`
 
-Tests upload and download large amounts of data to and from S3. The test
-timeout is set to 40 seconds because Internet connectivity waries wildly.
+Tests upload and download large amounts of data to and from S3.
