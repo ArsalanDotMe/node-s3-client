@@ -7,10 +7,6 @@ export const MAX_DELETE_COUNT = 1000
 export const MAX_MULTIPART_COUNT = 10000
 export const MIN_MULTIPART_SIZE = 5 * 1024 * 1024
 
-export const createClient = function (options: ClientConfiguration) {
-  return new Client(options)
-}
-
 async function sleep (delay: number) {
   return new Promise((resolve) => setTimeout(resolve, delay))
 }
@@ -26,8 +22,7 @@ export type ListObjectsRequest = {
 }
 
 export type ClientConfiguration = {
-  s3Options?: AWS.S3.ClientConfiguration
-  s3Client?: AWS.S3
+  s3Client: AWS.S3
   maxAsyncS3?: number
   s3RetryCount?: number
   s3RetryDelay?: number
@@ -37,7 +32,11 @@ export type ClientConfiguration = {
   multipartDownloadSize?: number
 }
 
-export class Client {
+export const createClient = function (options: ClientConfiguration) {
+  return new Client(options)
+}
+
+class Client {
   s3: AWS.S3
   s3RetryCount: number
   s3RetryDelay: number
@@ -49,7 +48,10 @@ export class Client {
 
   constructor (options: ClientConfiguration) {
     options = options || {}
-    this.s3 = options.s3Client || new AWS.S3(options.s3Options)
+    this.s3 = options.s3Client
+    if (!options.s3Client) {
+      throw new Error('You need to pass in your own initialized s3Client')
+    }
     this.maxAsyncS3 = options.maxAsyncS3 || 20
     this.s3RetryCount = options.s3RetryCount || 3
     this.s3RetryDelay = options.s3RetryDelay || 1000
@@ -93,7 +95,6 @@ export class Client {
 
   async deleteDir (s3Params: DeleteDirRequest) {
     const bucket = s3Params.Bucket
-    const mfa = s3Params.MFA
     let listObjectsParams = {
       s3Params: {
         Bucket: bucket,
@@ -102,7 +103,7 @@ export class Client {
     }
     const ee = new EventEmitter()
     const listObjectsPromise = this.listObjects(listObjectsParams, ee)
-    let deleteObjectPromises: Promise<any>[] = []
+    let deleteObjectPromises: Promise<AWS.S3.DeleteObjectsOutput>[] = []
     ee.on('data', (objects) => {
       const deleteParams: AWS.S3.DeleteObjectsRequest = {
         Bucket: s3Params.Bucket,

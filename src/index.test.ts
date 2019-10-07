@@ -1,8 +1,9 @@
+import AWS from 'aws-sdk'
 import * as s3 from './index'
 import { EventEmitter } from 'events'
 let path = require('path')
 let ncp = require('ncp')
-let assert = require('assert')
+import assert from 'assert'
 import fs from 'fs'
 import mkdirp from 'mkdirp'
 let crypto = require('crypto')
@@ -19,7 +20,7 @@ let remoteDir = remoteRoot + 'dir1'
 let remoteManyFilesDir = remoteRoot + 'many-files-dir'
 let file1Md5 = 'b1946ac92492d2347c6235b4d2611184'
 
-jest.setTimeout(40 * 1000)
+jest.setTimeout(20 * 1000)
 
 if (!process.env.S3_BUCKET || !process.env.S3_KEY || !process.env.S3_SECRET) {
   console.log('S3_BUCKET, S3_KEY, and S3_SECRET env vars needed to run tests')
@@ -29,14 +30,15 @@ if (!process.env.S3_BUCKET || !process.env.S3_KEY || !process.env.S3_SECRET) {
 let s3Bucket = process.env.S3_BUCKET as string
 
 function createClient () {
+  const s3aws = new AWS.S3({
+    accessKeyId: process.env.S3_KEY,
+    secretAccessKey: process.env.S3_SECRET,
+    endpoint: process.env.S3_ENDPOINT
+  })
   return s3.createClient({
     multipartUploadThreshold: 15 * 1024 * 1024,
     multipartUploadSize: 5 * 1024 * 1024,
-    s3Options: {
-      accessKeyId: process.env.S3_KEY,
-      secretAccessKey: process.env.S3_SECRET,
-      endpoint: process.env.S3_ENDPOINT
-    }
+    s3Client: s3aws
   })
 }
 
@@ -439,54 +441,14 @@ describe('s3', function () {
 //     })
 //   })
 
-//   it('multipart upload', function (done) {
-//     createBigFile(localFile, 16 * 1024 * 1024, function (err, _hexdigest) {
-//       if (err) return done(err)
-//       hexdigest = _hexdigest
-//       let client = createClient()
-//       let params = {
-//         localFile: localFile,
-//         s3Params: {
-//           Key: remoteFile,
-//           Bucket: s3Bucket
-//         }
-//       }
-//       let uploader = client.uploadFile(params)
-//       uploader.on('error', done)
-//       let progress = 0
-//       let progressEventCount = 0
-//       uploader.on('progress', function () {
-//         let amountDone = uploader.progressAmount
-//         let amountTotal = uploader.progressTotal
-//         let newProgress = amountDone / amountTotal
-//         progressEventCount += 1
-//         assert(newProgress >= progress, 'old progress: ' + progress + ', new progress: ' + newProgress)
-//         progress = newProgress
-//       })
-//       uploader.on('end', function (data) {
-//         assert.strictEqual(progress, 1)
-//         assert(progressEventCount >= 2, 'expected at least 2 progress events. got ' + progressEventCount)
-//         assert.ok(data, 'expected data. got ' + data)
-//         done()
-//       })
-//     })
-//   })
-
-//   it('download file with multipart etag', function (done) {
-//     doDownloadFileTest(done)
-//   })
-
-//   it('deletes a folder', function (done) {
-//     let client = createClient()
-//     let s3Params = {
-//       Prefix: remoteRoot,
-//       Bucket: s3Bucket
-//     }
-//     let deleter = client.deleteDir(s3Params)
-//     deleter.on('end', function () {
-//       done()
-//     })
-//   })
+  test('deletes a folder', async () => {
+    let client = createClient()
+    let s3Params = {
+      Prefix: remoteRoot,
+      Bucket: s3Bucket
+    }
+    await client.deleteDir(s3Params)
+  })
 
 //   function doDownloadFileTest (done) {
 //     fs.unlink(localFile, function (err) {
