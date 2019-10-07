@@ -4,7 +4,7 @@
   "description": "Amazon S3 client for upload/download files",
   "main": "lib/index.js",
   "scripts": {
-    "test": "jest --verbose false",
+    "test": "jest --runInBand",
     "build": "tsc -p .",
     "build:live": "tsc -w",
     "security": "nsp check --summary",
