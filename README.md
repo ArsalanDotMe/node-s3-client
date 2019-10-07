@@ -2,61 +2,42 @@
 
 ## Installation
 
-`npm install s3-client --save`
+`npm install modern-s3`
+
+Inspired by the now abandoned [s3](https://www.npmjs.com/package/s3)
 
 ## Features
 
- * Automatically retry a configurable number of times when S3 returns an error.
+ * Relies on the modern versions of AWS client SDK for retries. Does not implement its own retry logic
  * Includes logic to make multiple requests when there is a 1000 object limit.
  * Ability to set a limit on the maximum parallelization of S3 requests.
-   Retries get pushed to the end of the parallelization queue.
  * Ability to sync a dir to and from S3.
- * Progress reporting.
+ * Promise based API with additional reporting if passed an event emitter
  * Supports files of any size (up to S3's maximum 5 TB object size limit).
- * Uploads large files quickly using parallel multipart uploads.
- * Uses heuristics to compute multipart ETags client-side to avoid uploading
-   or downloading files unnecessarily.
+ * Relies on the AWS SDK's own intelligent upload method to do multipart uploads.
  * Automatically provide Content-Type for uploads based on file extension.
- * Support third-party S3-compatible platform services like Ceph
-
-See also the companion CLI tool which is meant to be a drop-in replacement for
-s3cmd: [s3-cli](https://github.com/matrus2/node-s3-cli).
 
 ## Synopsis
 
 ### Create a client
 
 ```js
-var s3 = require('s3-client');
+import AWS from 'aws-sdk'
+import * as s3 from 'modern-s3'
+
+const awsClient = new AWS.S3({
+  accessKeyId: "your s3 key",
+  secretAccessKey: "your s3 secret",
+  region: "your region",
+  // See: http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/Config.html#constructor-property
+})
 
 var client = s3.createClient({
   maxAsyncS3: 20,     // this is the default
-  s3RetryCount: 3,    // this is the default
-  s3RetryDelay: 1000, // this is the default
   multipartUploadThreshold: 20971520, // this is the default (20 MB)
   multipartUploadSize: 15728640, // this is the default (15 MB)
-  s3Options: {
-    accessKeyId: "your s3 key",
-    secretAccessKey: "your s3 secret",
-    region: "your region",
-    // endpoint: 's3.yourdomain.com',
-    // sslEnabled: false
-    // any other options are passed to new AWS.S3()
-    // See: http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/Config.html#constructor-property
-  },
-});
-```
-
-### Create a client from existing AWS.S3 object
-
-```js
-var s3 = require('s3-client');
-var awsS3Client = new AWS.S3(s3Options);
-var options = {
-  s3Client: awsS3Client,
-  // more options available. See API docs below.
-};
-var client = s3.createClient(options);
+  s3Client: awsClient
+})
 ```
 
 ## API Documentation
@@ -67,16 +48,9 @@ Creates an S3 client.
 
 `options`:
 
- * `s3Client` - optional, an instance of `AWS.S3`. Leave blank if you provide `s3Options`.
- * `s3Options` - optional. leave blank if you provide `s3Client`.
-   - See AWS SDK documentation for available options which are passed to `new AWS.S3()`:
-     http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/Config.html#constructor-property
+ * `s3Client` - an instance of `AWS.S3`.
  * `maxAsyncS3` - maximum number of simultaneous requests this client will
    ever have open to S3. defaults to `20`.
- * `s3RetryCount` - how many times to try an S3 operation before giving up.
-   Default 3.
- * `s3RetryDelay` - how many milliseconds to wait before retrying an S3
-   operation. Default 1000.
  * `multipartUploadThreshold` - if a file is this many bytes or greater, it
    will be uploaded via a multipart request. Default is 20MB. Minimum is 5MB.
    Maximum is 5GB.
@@ -121,7 +95,7 @@ Works for any region, and returns a string which looks like this:
 `http://bucket.s3.amazonaws.com/key`
 
 
-### client.deleteObjects(s3Params)
+### client.deleteObjects(s3Params, ee?: EventEmitter)
 
 See http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#deleteObjects-property
 
@@ -129,21 +103,42 @@ See http://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#deleteObjects
 
 The difference between using AWS SDK `deleteObjects` and this one:
 
- * Retry based on the client's retry settings.
  * Make multiple requests if the number of objects you want to delete is
    greater than 1000.
 
-Returns an `EventEmitter` with these properties:
+If passed an `EventEmitter` it emits the following events:
 
- * `progressAmount`
- * `progressTotal`
+ * `'progress'` - emitted with object `{ progressAmount: number, progressTotal: number }`.
+ * `'data' (data)` - emitted when a request completes.
 
-And these events:
+Returns list of responses from AWS requests
 
- * `'error' (err)`
- * `'end'` - emitted when all objects are deleted.
- * `'progress'` - emitted when the `progressAmount` or `progressTotal` properties change.
- * `'data' (data)` - emitted when a request completes. There may be more.
+### client.deleteDir(params)
+
+Deletes specified directory and all its children in an S3 bucket. If objects within a directory
+are more than 1000, it deletes them in multiple requests.
+
+`params` is an object with following properties:
+ * Bucket (required)
+ * Prefix (required)
+ * MFA (optional)
+
+Returns list of responses from AWS Delete Object requests.
+
+### client.listObjects(params, ee?: EventEmitter)
+
+Lists objects recursively in the specified directory or path in S3. If there are more than 1000 requests, it
+lists objects in multiple requests.
+
+`params` is an object with following properties:
+ * maxObjects: maximum number of objects to list (but might still return more than this number). Default is 10,0000
+ * s3Params: See https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#listObjectsV2-property
+
+If passed an EventEmitter, it emits the following events on it:
+
+ * `'data'` - emitted when a request completes. Called with array of returned S3 objects (`AWS.S3.Object[]`)
+
+Returns list of S3 Objects (`AWS.S3.Object[]`)
 
 ## Testing
 

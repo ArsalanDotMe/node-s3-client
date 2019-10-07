@@ -1,8 +1,9 @@
 {
-  "name": "s3-client",
-  "version": "4.4.2",
-  "description": "Amazon S3 client for upload/download files",
-  "main": "lib/index.js",
+  "name": "modern-s3",
+  "version": "1.0.0",
+  "description": "Modern Amazon S3 client for high-level operations",
+  "main": "lib/index",
+  "types": "lib/index",
   "scripts": {
     "test": "jest --runInBand",
     "build": "tsc -p .",
@@ -30,7 +31,7 @@
     "multipart",
     "size"
   ],
-  "author": "Andrew Kelley",
+  "author": "Arsalan Ahmad",
   "license": "MIT",
   "engines": {
     "node": ">=8.0.0"
@@ -58,6 +59,9 @@
     "pend": "~1.2.0",
     "rimraf": "~2.6.2",
     "streamsink": "~1.2.0"
+  },
+  "peerDependencies": {
+    "aws-sdk": "^2.346.0"
   },
   "bugs": {
     "url": "https://github.com/ArsalanDotMe/node-s3-client/issues"

@@ -18,6 +18,7 @@ export type DeleteDirRequest = {
 }
 
 export type ListObjectsRequest = {
+  maxObjects?: number,
   s3Params: AWS.S3.ListObjectsV2Request
 }
 
@@ -75,22 +76,26 @@ class Client {
   }
 
   async deleteObjects (s3Params: AWS.S3.DeleteObjectsRequest, ee?: EventEmitter) {
-    const self = this
-
     const params: AWS.S3.DeleteObjectsRequest = {
       Bucket: s3Params.Bucket,
-      Delete: extend({}, s3Params.Delete),
+      Delete: { ...s3Params.Delete },
       MFA: s3Params.MFA
     }
+
     const slices: AWS.S3.ObjectIdentifier[][] = chunkArray(params.Delete.Objects, MAX_DELETE_COUNT)
 
-    await Promise.all(slices.map(uploadSlice))
-
-    async function uploadSlice (slice: AWS.S3.ObjectIdentifier[]) {
+    let progressTotal = 0
+    return Promise.all(slices.map(async (slice: AWS.S3.ObjectIdentifier[]) => {
       params.Delete.Objects = slice
-      const data = await self.s3.deleteObjects(params).promise()
+      const data = await this.s3.deleteObjects(params).promise()
+      if (ee && data.Deleted) {
+        const progressAmount = data.Deleted.length
+        progressTotal += progressAmount
+        ee.emit('progress', { progressAmount, progressTotal })
+      }
       ee && ee.emit('data', data)
-    }
+      return data
+    }))
   }
 
   async deleteDir (s3Params: DeleteDirRequest) {
@@ -116,40 +121,35 @@ class Client {
       deleteObjectPromises.push(this.s3.deleteObjects(deleteParams).promise())
     })
     await listObjectsPromise
-    await Promise.all(deleteObjectPromises)
+    return Promise.all(deleteObjectPromises)
   }
 
   async listObjects (params: ListObjectsRequest, ee?: EventEmitter) {
     let s3Details = { ...params.s3Params }
 
     const MAX_KEYS = 1000
+    const maxObjectsToList = params.maxObjects || 10 * 1000
     let s3ObjectsList: Array<AWS.S3.Object> = []
     let isPending: boolean = true
     let continuationToken: string | undefined = s3Details.ContinuationToken
 
-    while (isPending) {
-      try {
-        const listData = await this.s3.listObjectsV2({
-          ...s3Details,
-          ContinuationToken: continuationToken,
-          MaxKeys: s3Details.MaxKeys || MAX_KEYS
-        }).promise()
-        if (!listData.Contents) {
-          throw new Error('List Contents should always be defined')
-        }
-
-        isPending = !!listData.IsTruncated
-        continuationToken = listData.NextContinuationToken
-
-        const listObjects = listData.Contents
-        if (ee) { ee.emit('data', listObjects) }
-        s3ObjectsList = [...s3ObjectsList, ...listObjects]
-      } catch (err) {
-        ee && ee.emit('error', err)
-        throw err
+    while (isPending && s3ObjectsList.length < maxObjectsToList) {
+      const listData = await this.s3.listObjectsV2({
+        ...s3Details,
+        ContinuationToken: continuationToken,
+        MaxKeys: s3Details.MaxKeys || MAX_KEYS
+      }).promise()
+      if (!listData.Contents) {
+        throw new Error('List Contents should always be defined')
       }
+
+      isPending = !!listData.IsTruncated
+      continuationToken = listData.NextContinuationToken
+
+      const listObjects = listData.Contents
+      if (ee) { ee.emit('data', listObjects) }
+      s3ObjectsList = [...s3ObjectsList, ...listObjects]
     }
-    ee && ee.emit('done', s3ObjectsList)
     return s3ObjectsList
   }
 }
